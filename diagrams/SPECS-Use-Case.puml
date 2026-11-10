@@ -1,0 +1,81 @@
+@startuml SPECS-Use-Case
+title SPECS PC Configuration and Optimization Platform\nHigh-Level UML Use Case Diagram
+
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam actorStyle awesome
+skinparam usecase {
+  BackgroundColor #F7FBFF
+  BorderColor #245B78
+  ArrowColor #245B78
+}
+
+actor "PC Builder /\nVisitor" as User
+actor "Registered\nUser" as Member
+actor Administrator as Admin
+actor "Component Catalog &\nPricing Data" as Catalog <<external system>>
+actor "Authentication\nService" as Auth <<external system>>
+actor "Natural-Language\nService" as NLP <<external system>>
+
+Member --|> User
+
+rectangle "SPECS System" {
+  usecase "Browse, Search, and\nFilter Components" as UC_Browse
+  usecase "Create or Edit\nPC Build" as UC_Create
+  usecase "Calculate Total\nBuild Cost" as UC_Cost
+  usecase "Evaluate Component\nCompatibility" as UC_Compat
+  usecase "Explain Incompatibility\nand Affected Components" as UC_Explain
+  usecase "Recommend Compatible\nReplacement" as UC_Replace
+  usecase "Specify Budget, Workload,\nand Build Preferences" as UC_Requirements
+  usecase "Generate Optimized\nPC Build" as UC_Optimize
+  usecase "Explain Component\nSelection Reasons" as UC_Reasons
+  usecase "Modify Generated Build\nand Recheck Compatibility" as UC_Modify
+  usecase "Compare PC Builds" as UC_Compare
+  usecase "Save, Rename, Duplicate,\nUpdate, or Delete Build" as UC_Manage
+  usecase "Share Read-Only\nBuild Link" as UC_Share
+  usecase "Manage Component Records,\nCompatibility Rules, and Scores" as UC_Admin
+  usecase "Authenticate User" as UC_Auth
+  usecase "Interpret Natural-Language\nBuild Request" as UC_NLP
+}
+
+User --> UC_Browse
+User --> UC_Create
+User --> UC_Optimize
+User --> UC_Compare
+User --> UC_Modify
+Member --> UC_Manage
+Member --> UC_Share
+Member --> UC_Auth
+Admin --> UC_Admin
+Admin --> UC_Auth
+
+UC_Create .> UC_Cost : <<include>>
+UC_Create .> UC_Compat : <<include>>
+UC_Compat .> UC_Explain : <<extend>>
+UC_Explain .> UC_Replace : <<extend>>
+UC_Optimize .> UC_Requirements : <<include>>
+UC_Optimize .> UC_Compat : <<include>>
+UC_Optimize .> UC_Cost : <<include>>
+UC_Optimize .> UC_Reasons : <<include>>
+UC_Modify .> UC_Compat : <<include>>
+UC_Modify .> UC_Cost : <<include>>
+UC_Manage .> UC_Auth : <<include>>
+UC_Share .> UC_Auth : <<include>>
+UC_NLP .> UC_Requirements : <<extend>>
+UC_Optimize .> UC_NLP : <<extend>>
+
+Catalog --> UC_Browse
+Catalog --> UC_Cost
+Catalog --> UC_Compat
+Catalog --> UC_Optimize
+Auth --> UC_Auth
+NLP --> UC_NLP
+
+note right of NLP
+  Optional/stretch integration.
+  Any resulting build is still
+  validated by SPECS rules.
+end note
+
+@enduml

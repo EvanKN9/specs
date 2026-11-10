@@ -1,0 +1,47 @@
+@startuml SPECS-Replace-Component
+title SPECS Activity Diagram\nReplace a Component and Evaluate Compatibility
+
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #F7FBFF
+  BorderColor #245B78
+  ArrowColor #245B78
+  DiamondBackgroundColor #FFF7D6
+  DiamondBorderColor #8A6D1D
+}
+
+start
+partition "User" {
+  :Open an existing or generated build;
+  :Choose the component to replace;
+  :Browse, search, or filter replacement components;
+  :Select a replacement component;
+}
+partition "SPECS" {
+  :Temporarily update the build;
+  :Recalculate estimated total cost;
+  :Run compatibility checks for the complete build;
+  if (Replacement is compatible?) then (yes)
+    :Display updated build,\ncost, and compatibility status;
+    :Show updated component specifications\nand price date;
+  else (no)
+    :Identify the conflict and affected components;
+    :Explain the incompatibility;
+    :Recommend compatible alternatives\nwhen available;
+  endif
+}
+partition "User" {
+  if (Keep selected replacement?) then (yes)
+    :Confirm the updated build;
+    :Save or continue editing the build;
+    stop
+  else (no / conflict)
+    if (Try another component?) then (yes)
+      :Return to replacement search;
+    else (no)
+      :Cancel replacement and restore prior build;
+      stop
+    endif
+  endif
+}
+@enduml

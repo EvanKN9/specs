@@ -1,0 +1,60 @@
+@startuml SPECS-Generate-Optimized-Build
+title SPECS Activity Diagram\nGenerate an Optimized PC Build
+
+skinparam shadowing false
+skinparam activity {
+  BackgroundColor #F7FBFF
+  BorderColor #245B78
+  ArrowColor #245B78
+  DiamondBackgroundColor #FFF7D6
+  DiamondBorderColor #8A6D1D
+}
+
+start
+partition "User" {
+  :Enter budget, workload,\nstorage, network, and other preferences;
+  if (Use natural-language request?) then (yes)
+    :Submit natural-language request;
+  else (no)
+    :Submit structured requirements;
+  endif
+}
+partition "SPECS" {
+  if (Natural-language request?) then (yes)
+    :Convert request to structured constraints\n(optional NLP service);
+  endif
+  :Validate required constraints;
+  if (Constraints complete and valid?) then (yes)
+    :Load component catalog, prices,\ncompatibility rules, and performance data;
+  else (no)
+    :Display missing or invalid requirements;
+    stop
+  endif
+}
+partition "Optimization Engine" {
+  :Generate candidate component combinations;
+  :Reject candidates that violate\ncompatibility or mandatory constraints;
+  if (Any valid candidates remain?) then (yes)
+    :Score candidates for budget,\nworkload performance, power, and value;
+    :Select highest-scoring build;
+  else (no)
+    :Report that no build satisfies\nthe supplied constraints;
+    stop
+  endif
+}
+partition "SPECS" {
+  :Run final deterministic compatibility validation;
+  :Calculate total cost and build metrics;
+  :Generate component selection explanations;
+  :Display optimized build and validation results;
+}
+partition "User" {
+  if (Accept or modify build?) then (accept)
+    :Save or continue with the proposed build;
+  else (modify)
+    :Change components or requirements;
+    :Recheck compatibility and regenerate as needed;
+  endif
+}
+stop
+@enduml

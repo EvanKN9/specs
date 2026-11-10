@@ -1,0 +1,52 @@
+The following requirements are based on the PC Build Optimization Platform business plan. Since a separate project backlog was not included, these can also serve as the starting point for creating or refining that backlog.
+1. High-Level Functional Requirements
+Functional requirements describe what the application must do.
+ID	Functional requirement	Priority
+FR-01	The system shall allow users to browse, search, filter, and view PC components and their technical specifications.	Must
+FR-02	The system shall allow users to manually create a PC build by selecting a CPU, motherboard, GPU, memory, storage, power supply, case, and cooling solution.	Must
+FR-03	The system shall calculate and display the estimated total cost of the selected components.	Must
+FR-04	The system shall evaluate component compatibility whenever a component is added, removed, or replaced.	Must
+FR-05	The system shall detect compatibility problems involving CPU sockets, motherboard form factors, memory generations, power requirements, physical clearances, cooling support, and storage interfaces.	Must
+FR-06	The system shall explain each detected incompatibility and identify the components responsible for the conflict.	Must
+FR-07	The system shall recommend compatible replacement components when a conflict is detected.	Should
+FR-08	The system shall allow users to specify a budget, intended workload, storage requirement, network requirements, and other build preferences.	Must
+FR-09	The system shall generate a complete PC configuration that satisfies the user’s required constraints.	Must
+FR-10	The system shall optimize generated builds according to budget, compatibility, workload performance, power requirements, and value.	Must
+FR-11	The system shall support workload profiles including gaming, software development, content creation, productivity, and general-purpose computing.	Must
+FR-12	The system shall explain why each major component was selected for an automatically generated build.	Must
+FR-13	The system shall allow users to modify an automatically generated configuration and recheck its compatibility.	Must
+FR-14	The system shall allow users to compare at least two builds by price, estimated performance, power consumption, and upgradeability.	Should
+FR-15	The system shall allow registered users to save, rename, duplicate, update, and delete their builds.	Must
+FR-16	The system shall generate a read-only link through which a user can share a build with another person.	Should
+FR-17	The system shall allow users to enter an existing PC configuration and request compatible upgrade recommendations.	Should
+FR-18	The system shall allow an administrator to create, update, deactivate, and delete component records.	Must
+FR-19	The system shall allow an administrator to manage compatibility rules and performance-scoring data.	Must
+FR-20	The system shall prevent unauthorized users from modifying another user’s private builds or administrative data.	Must
+FR-21	The system shall display the source date or last-updated date for component prices and specifications.	Should
+FR-22	The system may accept a natural-language build request and convert it into structured requirements.	Could/Stretch
+FR-23	Any build created from natural-language input shall be validated by the deterministic compatibility engine before being presented to the user.	Must if FR-22 is implemented
+
+
+2. High-Level Non-Functional Requirements
+Non-functional requirements describe the required quality of the system. Each requirement below includes an objective verification criterion.
+ID	Category	Non-functional requirement	Verification or validation criterion
+NFR-01	Performance	Compatibility results shall be displayed without noticeable delay after a build is modified.	For a build containing up to 15 components, 95% of compatibility checks must complete within 1 second during a test of at least 100 build modifications.
+NFR-02	Optimization performance	The system shall generate optimized builds within a reasonable amount of time.	Using a catalog of up to 300 components, 95% of build-generation requests must complete within 10 seconds during a test of at least 50 requests.
+NFR-03	API performance	Normal application requests shall respond promptly under expected usage.	Under a load of 100 concurrent users, 95% of non-optimization API requests must complete within 2 seconds, with an error rate below 1%.
+NFR-04	Compatibility accuracy	The compatibility engine shall consistently identify known valid and invalid configurations.	The engine must correctly evaluate 100% of at least 100 predefined compatibility test cases, including valid builds and intentionally incompatible builds.
+NFR-05	Optimization correctness	Automatically generated builds shall satisfy all mandatory user constraints.	Across at least 100 generated-build scenarios, 100% of the results must pass all compatibility rules, remain within the specified budget, and satisfy every mandatory requirement.
+NFR-06	Reliability	The application shall process requests without crashes or corrupted build data.	During a 1,000-request reliability test, at least 99% of requests must succeed, with zero corrupted or partially saved builds.
+NFR-07	Availability	The deployed application shall remain available during normal operation.	Automated health checks performed once per minute over seven consecutive days must show at least 99.5% availability, excluding announced maintenance periods.
+NFR-08	Security	Authentication, authorization, and stored credentials shall be protected using established security practices.	Passwords must be salted and hashed; all deployed traffic must use HTTPS; authorization tests must confirm that users cannot access another user’s private builds; and security scans must report zero unresolved critical or high-severity vulnerabilities.
+NFR-09	Privacy	The system shall collect only the user data necessary to provide accounts and saved builds.	A data review must confirm that no payment-card, government-identifier, or unrelated personal data is stored. Deleting an account must remove or anonymize its personal data within 24 hours.
+NFR-10	Usability	First-time PC builders shall be able to generate and understand a build without assistance.	In a test involving at least 10 representative users, at least 80% must generate a valid build and locate its compatibility explanation within 7 minutes without assistance.
+NFR-11	Accessibility	Core application workflows shall be usable by people who rely on keyboards or assistive technology.	Core pages must produce zero critical or serious automated accessibility violations, and all core workflows must be completable using only a keyboard.
+NFR-12	Browser compatibility	The application shall work on commonly used desktop and mobile browsers.	All critical workflows must pass on the latest stable versions of Chrome, Edge, and Firefox, and at viewport widths from 360 to 1440 pixels, with no blocking layout defects.
+NFR-13	Maintainability	The codebase shall be organized and tested so that it can be safely modified by the project team.	Automated tests must achieve at least 80% coverage of backend compatibility and optimization logic. All code must pass the team’s formatter, linter, and continuous-integration checks before merging.
+NFR-14	Deployability	A developer shall be able to deploy the application consistently from documented instructions.	On a clean development environment with required prerequisites installed, the application must be deployable using the documented process within 15 minutes and pass its automated health check.
+NFR-15	Data integrity	Builds and component relationships shall remain valid after database operations.	Automated tests covering creation, modification, deletion, failure rollback, and concurrent updates must produce zero orphaned build-component records or incomplete transactions.
+NFR-16	Recoverability	Build and account data shall be recoverable following a database failure.	A backup restoration test must recover the database within 30 minutes, with no more than 24 hours of data loss.
+NFR-17	Explainability	Optimization results shall provide understandable reasons for component selections.	In 100% of generated builds, the system must display at least one selection reason for the CPU, GPU, motherboard, memory, and power supply.
+NFR-18	AI safety	Natural-language processing shall not bypass deterministic compatibility checks.	In a test of at least 50 natural-language requests, 100% of presented builds must pass the same deterministic compatibility and budget validation used for manually created builds.
+NFR-19	Price transparency	Users shall be informed that displayed prices may not reflect current retailer prices.	Every page displaying a total build price must also display the price dataset’s last-updated date. This must pass on 100% of tested build-result and comparison pages.
+NFR-20	Scalability	Increasing the component catalog shall not make the optimizer unusable.	Expanding the catalog from 100 to 300 components must not increase the median optimization time by more than 300%, and the median must remain below 10 seconds.
