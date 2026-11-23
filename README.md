@@ -21,6 +21,14 @@ Install dependencies:
 
 ```bash
 npm install
+```
 
 ## Start Development Server
+
+```bash
 npm run dev
+```
+
+## Backend
+
+The first FastAPI backend milestone and its exact Windows PowerShell setup, run, and test commands are documented in [backend/README.md](backend/README.md).
