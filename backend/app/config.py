@@ -2,6 +2,12 @@
 
 from dataclasses import dataclass
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
 def _csv(value: str) -> list[str]:
@@ -16,6 +22,7 @@ class Settings:
     app_name: str
     api_v1_prefix: str
     frontend_origins: list[str]
+    database_url: str | None
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -28,4 +35,5 @@ class Settings:
                     "http://localhost:5173,http://127.0.0.1:5173",
                 )
             ),
+            database_url=os.getenv("DATABASE_URL"),
         )
