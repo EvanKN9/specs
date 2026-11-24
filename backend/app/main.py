@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .api.health import router as health_router
 from .api.components import router as components_router
 from .api.compatibility import router as compatibility_router
+from .api.builds import router as builds_router
 from .config import Settings
 
 
@@ -31,6 +32,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.include_router(
         compatibility_router,
+        prefix=runtime_settings.api_v1_prefix,
+    )
+    application.include_router(
+        builds_router,
         prefix=runtime_settings.api_v1_prefix,
     )
     return application

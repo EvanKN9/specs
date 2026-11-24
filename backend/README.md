@@ -107,6 +107,24 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/compatibility/c
 
 The response reports an overall `compatible`, `incompatible`, `unknown`, or `incomplete` status plus individual rule results, explanations, affected component IDs, details, and missing specification paths. Implemented rules cover CPU socket and chipset, motherboard/case form factor, RAM generation, PSU power budget, GPU length, CPU cooler socket and height, and NVMe storage slots. Missing fields never pass a rule. SATA port capacity, BIOS/QVL support, lane sharing, connectors, and full physical-clearance checks remain unsupported or incomplete.
 
+## Build recommendations
+
+Generate a complete compatible configuration from the current catalog:
+
+```powershell
+$body = @{
+  budget_usd = 1400
+  workload = "development"
+  minimum_storage_gb = 2000
+  wifi_preference = "preferred"
+} | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/builds/recommend -ContentType "application/json" -Body $body
+```
+
+The accepted workloads are `gaming`, `development`, `content_creation`, `productivity`, and `general`. Gaming requests must provide `gaming_resolution` as `1080p`, `1440p`, or `4k`. Wi-Fi is currently a soft preference only: the catalog has no structured motherboard Wi-Fi field, so `required` returns an infeasible response; `preferred` uses the motherboard model-name signal and does not certify wireless hardware.
+
+The search uses catalog performance tiers, CPU cores/threads, GPU VRAM, memory capacity, storage capacity/read speed, workload weights, budget utilization, and value-per-dollar proxies. These are documented scoring assumptions, not measured benchmarks or FPS claims. Budget and compatibility are hard constraints, and the selected build is revalidated through the compatibility engine before it is returned.
+
 ## Run tests
 
 From the repository root, with the virtual environment active:

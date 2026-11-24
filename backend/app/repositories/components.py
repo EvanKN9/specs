@@ -23,6 +23,14 @@ class ComponentRepository:
         """Return catalog components matching the requested IDs."""
         return list(session.scalars(select(Component).where(Component.id.in_(component_ids))))
 
+    def list_all(self, session: Session) -> list[Component]:
+        """Return the complete catalog in a stable order."""
+        return list(
+            session.scalars(
+                select(Component).order_by(Component.category, Component.manufacturer, Component.model_name, Component.id)
+            )
+        )
+
     def get_by_source_identity(
         self, session: Session, source_name: str, source_id: str
     ) -> Component | None:
