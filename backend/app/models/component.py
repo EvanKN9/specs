@@ -5,7 +5,17 @@ from decimal import Decimal
 from enum import Enum
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Enum as SqlEnum, Numeric, String, Text, Uuid
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    Enum as SqlEnum,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    Uuid,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ..db.base import Base
@@ -33,6 +43,7 @@ class Component(Base):
 
     __tablename__ = "components"
     __table_args__ = (
+        UniqueConstraint("source_name", "source_id", name="uq_components_source_identity"),
         CheckConstraint(
             "category IN ('cpu', 'gpu', 'motherboard', 'memory', 'storage', 'psu', 'case', 'cpu_cooler')",
             name="ck_components_category",
@@ -56,8 +67,12 @@ class Component(Base):
     price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
     source_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    source_license: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_license_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_attribution: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utc_now)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utc_now, onupdate=_utc_now

@@ -1,6 +1,6 @@
 # SPECS backend
 
-This is the first backend milestone: a minimal FastAPI application with a versioned health endpoint and local Vite CORS support. Persistence, catalog, compatibility, optimization, and LLM features are intentionally not included yet.
+This backend provides the SPECS foundation and Milestone 1C catalog read path: a versioned FastAPI API, PostgreSQL persistence, an idempotent TechFuelHQ component import, and read-only component endpoints. Compatibility, optimization, authentication, and LLM features are intentionally not included yet.
 
 ## Windows PowerShell setup
 
@@ -66,6 +66,31 @@ alembic -c backend\alembic.ini current
 ```
 
 The initial migration creates only the `components` table and Alembic’s version table. It does not reset or modify the `blog` database.
+
+## Import the component dataset
+
+The importer downloads `https://techfuelhq.com/data/pc-builder-parts.json`, validates the configured database name is `specs_dev`, and upserts by the source dataset name plus original component ID:
+
+```powershell
+python -m backend.scripts.import_components
+```
+
+To repeat an import from an already downloaded JSON file:
+
+```powershell
+python -m backend.scripts.import_components --input path\to\pc-builder-parts.json
+```
+
+The source is CC BY 4.0 and requires TechFuelHQ attribution. The importer preserves source IDs, source URLs, verification dates, attribution, and license metadata. The source dataset contains seven categories (CPU, GPU, motherboard, RAM, storage, PSU, and case); RAM is normalized to `memory`, and no CPU-cooler records are fabricated. The source removed all prices, so imported prices remain `NULL` rather than being treated as current or illustrative prices.
+
+## Catalog API
+
+```text
+GET /api/v1/components?category=cpu&offset=0&limit=20
+GET /api/v1/components/{id}
+```
+
+Category is optional. `limit` is bounded from 1 through 100, and missing component IDs return 404.
 
 ## Run tests
 
