@@ -29,6 +29,23 @@ class ComponentRepository:
             )
         )
 
+    def set_price(
+        self,
+        session: Session,
+        component: Component,
+        *,
+        price,
+        currency: str,
+        source: str,
+        illustrative: bool,
+    ) -> Component:
+        component.price = price
+        component.currency = currency
+        component.price_source = source
+        component.price_is_illustrative = illustrative
+        session.flush()
+        return component
+
     def list(
         self,
         session: Session,
@@ -65,7 +82,6 @@ class ComponentRepository:
             "manufacturer",
             "model_name",
             "specifications",
-            "price",
             "currency",
             "source_url",
             "source_updated_at",
@@ -74,5 +90,9 @@ class ComponentRepository:
             "source_attribution",
         ):
             setattr(existing, attribute, getattr(component, attribute))
+        if component.price is not None:
+            existing.price = component.price
+            existing.price_source = component.price_source
+            existing.price_is_illustrative = component.price_is_illustrative
         session.flush()
         return existing, False

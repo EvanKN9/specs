@@ -24,6 +24,8 @@ class ComponentResponse(BaseModel):
     specifications: dict
     price: str | None
     currency: str
+    price_source: str | None
+    price_is_illustrative: bool
     source_name: str | None
     source_id: str | None
     source_url: str | None
@@ -49,6 +51,8 @@ def _to_response(component: Component) -> ComponentResponse:
         specifications=component.specifications,
         price=str(component.price) if component.price is not None else None,
         currency=component.currency,
+        price_source=component.price_source,
+        price_is_illustrative=component.price_is_illustrative,
         source_name=component.source_name,
         source_id=component.source_id,
         source_url=component.source_url,

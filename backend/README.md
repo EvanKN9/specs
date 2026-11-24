@@ -1,6 +1,6 @@
 # SPECS backend
 
-This backend provides the SPECS foundation and Milestone 1C catalog read path: a versioned FastAPI API, PostgreSQL persistence, an idempotent TechFuelHQ component import, and read-only component endpoints. Compatibility, optimization, authentication, and LLM features are intentionally not included yet.
+This backend provides the SPECS foundation and Milestone 1D catalog: a versioned FastAPI API, PostgreSQL persistence, an idempotent TechFuelHQ import, six supplemental CPU coolers, and read-only component endpoints. Compatibility, optimization, authentication, and LLM features are intentionally not included yet.
 
 ## Windows PowerShell setup
 
@@ -81,7 +81,11 @@ To repeat an import from an already downloaded JSON file:
 python -m backend.scripts.import_components --input path\to\pc-builder-parts.json
 ```
 
-The source is CC BY 4.0 and requires TechFuelHQ attribution. The importer preserves source IDs, source URLs, verification dates, attribution, and license metadata. The source dataset contains seven categories (CPU, GPU, motherboard, RAM, storage, PSU, and case); RAM is normalized to `memory`, and no CPU-cooler records are fabricated. The source removed all prices, so imported prices remain `NULL` rather than being treated as current or illustrative prices.
+The source is CC BY 4.0 and requires TechFuelHQ attribution. The importer preserves source IDs, source URLs, verification dates, attribution, and license metadata. The source dataset contains seven categories (CPU, GPU, motherboard, RAM, storage, PSU, and case); RAM is normalized to `memory`. Six CPU-cooler records are maintained separately in `backend\data\cpu_coolers.json` from manufacturer documentation and are labeled as supplemental. No cooler specifications are generated from estimates.
+
+The same command applies `backend\data\demo_pricing.json`, a separate, non-live fixture. It assigns illustrative USD values to the catalog and sets `price_is_illustrative=true` plus the fixture name in `price_source`. These are not live prices and are not verified retailer prices. Hardware specifications remain in the `specifications` JSON field and are not derived from the pricing fixture.
+
+The imported data is sufficient for future deterministic checks involving many CPU/socket, motherboard/socket and RAM-type combinations, PSU wattage, case form factor, selected GPU lengths, storage interfaces, and cooler socket/height data. Important gaps remain: some GPU board lengths and PSU minimums are absent, many storage endurance values are absent, most case GPU-clearance values are absent, RAM rank is absent, and BIOS support, QVL, lane sharing, connector requirements, exact slot availability, and full cooler/RAM clearance are not complete. These gaps must remain explicit until sourced.
 
 ## Catalog API
 

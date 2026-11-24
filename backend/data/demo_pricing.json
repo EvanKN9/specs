@@ -1,0 +1,33 @@
+{
+  "fixture_name": "SPECS illustrative demo pricing fixture",
+  "fixture_version": "1.0.0",
+  "currency": "USD",
+  "is_live": false,
+  "is_retailer_verified": false,
+  "note": "These values are classroom demo estimates only. They are not live prices and are not verified retailer prices.",
+  "price_source": "SPECS illustrative demo pricing fixture",
+  "category_defaults": {
+    "cpu": 149.99,
+    "gpu": 249.99,
+    "motherboard": 149.99,
+    "memory": 79.99,
+    "storage": 89.99,
+    "psu": 89.99,
+    "case": 79.99,
+    "cpu_cooler": 39.99
+  },
+  "tier_additions": {
+    "entry": 0.0,
+    "mid": 50.0,
+    "high": 150.0,
+    "flagship": 350.0
+  },
+  "overrides": {
+    "cooler-bequiet-pure-rock-2": 39.99,
+    "cooler-arctic-freezer-36": 44.99,
+    "cooler-noctua-nh-u12s-redux": 59.99,
+    "cooler-thermalright-peerless-assassin-120-se": 39.99,
+    "cooler-deepcool-ak620": 64.99,
+    "cooler-noctua-nh-d15": 99.99
+  }
+}

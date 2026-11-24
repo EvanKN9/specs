@@ -66,6 +66,8 @@ class Component(Base):
     specifications: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, default="USD")
+    price_source: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    price_is_illustrative: Mapped[bool] = mapped_column(nullable=False, default=False)
     source_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     source_id: Mapped[str | None] = mapped_column(String(160), nullable=True)
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)

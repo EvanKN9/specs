@@ -1,14 +1,16 @@
 """Idempotently import the TechFuelHQ PC Builder Parts dataset."""
 
 import argparse
-from collections import Counter, defaultdict
+from collections import Counter
 from datetime import datetime, timezone
+from decimal import Decimal
 import json
 from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
 from sqlalchemy.engine import make_url
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..app.db.session import get_database_url, get_engine
@@ -27,6 +29,8 @@ CATEGORY_MAP = {
     "psu": ComponentCategory.PSU,
     "case": ComponentCategory.CASE,
 }
+SUPPLEMENTAL_DATASET_PATH = Path(__file__).resolve().parents[1] / "data" / "cpu_coolers.json"
+DEMO_PRICING_PATH = Path(__file__).resolve().parents[1] / "data" / "demo_pricing.json"
 IDENTITY_FIELDS = {"id", "vendor", "model", "source", "last_verified"}
 
 
@@ -36,6 +40,10 @@ def load_dataset(input_path: Path | None) -> dict[str, Any]:
     request = Request(DATASET_URL, headers={"User-Agent": "SPECS classroom MVP importer"})
     with urlopen(request, timeout=30) as response:
         return json.load(response)
+
+
+def load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def parse_verified_at(value: str | None) -> datetime | None:
@@ -83,6 +91,22 @@ def make_component(
         source_license=metadata.get("license"),
         source_license_url=metadata.get("license_url"),
         source_attribution=metadata.get("attribution_required"),
+    )
+
+
+def make_supplemental_component(record: dict[str, Any], dataset: dict[str, Any]) -> Component:
+    return Component(
+        category=ComponentCategory.CPU_COOLER,
+        manufacturer=record["manufacturer"],
+        model_name=record["model_name"],
+        specifications={**record["specifications"], "_supplemental_dataset": dataset["dataset_name"]},
+        price=None,
+        currency="USD",
+        source_name=dataset["dataset_name"],
+        source_id=record["source_id"],
+        source_url=record["source_url"],
+        source_updated_at=parse_verified_at(record.get("verified_at")),
+        source_attribution=dataset.get("attribution"),
     )
 
 
@@ -142,6 +166,54 @@ def import_dataset(dataset: dict[str, Any], session: Session) -> dict[str, Any]:
     }
 
 
+def import_supplemental_dataset(dataset: dict[str, Any], session: Session) -> dict[str, int]:
+    repository = ComponentRepository()
+    created = 0
+    updated = 0
+    for record in dataset["records"]:
+        _, was_created = repository.upsert(session, make_supplemental_component(record, dataset))
+        if was_created:
+            created += 1
+        else:
+            updated += 1
+    return {"created": created, "updated": updated, "total": len(dataset["records"])}
+
+
+def apply_demo_pricing(fixture: dict[str, Any], session: Session) -> dict[str, Any]:
+    repository = ComponentRepository()
+    priced = 0
+    unpriced: list[str] = []
+    for component in session.scalars(select(Component)).all():
+        override = fixture.get("overrides", {}).get(component.source_id)
+        if override is None:
+            base = fixture["category_defaults"].get(component.category.value)
+            if base is None:
+                unpriced.append(str(component.id))
+                continue
+            tier_addition = fixture.get("tier_additions", {}).get(
+                component.specifications.get("performance_tier"), 0.0
+            )
+            override = float(base) + float(tier_addition)
+        repository.set_price(
+            session,
+            component,
+            price=Decimal(str(override)),
+            currency=fixture["currency"],
+            source=fixture["price_source"],
+            illustrative=bool(fixture["is_live"] is False and fixture["is_retailer_verified"] is False),
+        )
+        priced += 1
+    session.commit()
+    return {
+        "fixture_name": fixture["fixture_name"],
+        "priced": priced,
+        "unpriced": unpriced,
+        "total": priced + len(unpriced),
+        "is_live": fixture["is_live"],
+        "is_retailer_verified": fixture["is_retailer_verified"],
+    }
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -149,6 +221,8 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Use a local JSON file instead of downloading the official dataset URL.",
     )
+    parser.add_argument("--coolers", type=Path, default=SUPPLEMENTAL_DATASET_PATH)
+    parser.add_argument("--pricing", type=Path, default=DEMO_PRICING_PATH)
     return parser.parse_args()
 
 
@@ -156,8 +230,12 @@ def main() -> None:
     args = parse_args()
     validate_database_target()
     dataset = load_dataset(args.input)
+    coolers = load_json(args.coolers)
+    pricing = load_json(args.pricing)
     with Session(get_engine()) as session:
         summary = import_dataset(dataset, session)
+        summary["supplemental"] = import_supplemental_dataset(coolers, session)
+        summary["pricing"] = apply_demo_pricing(pricing, session)
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
