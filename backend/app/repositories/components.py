@@ -19,6 +19,10 @@ class ComponentRepository:
     def get_by_id(self, session: Session, component_id: UUID) -> Component | None:
         return session.scalar(select(Component).where(Component.id == component_id))
 
+    def get_by_ids(self, session: Session, component_ids: list[UUID]) -> list[Component]:
+        """Return catalog components matching the requested IDs."""
+        return list(session.scalars(select(Component).where(Component.id.in_(component_ids))))
+
     def get_by_source_identity(
         self, session: Session, source_name: str, source_id: str
     ) -> Component | None:

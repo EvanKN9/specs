@@ -96,6 +96,17 @@ GET /api/v1/components/{id}
 
 Category is optional. `limit` is bounded from 1 through 100, and missing component IDs return 404.
 
+## Compatibility API
+
+Submit catalog component UUIDs to the deterministic compatibility engine:
+
+```powershell
+$body = @{ component_ids = @("component-uuid-1", "component-uuid-2") } | ConvertTo-Json
+Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/v1/compatibility/check -ContentType "application/json" -Body $body
+```
+
+The response reports an overall `compatible`, `incompatible`, `unknown`, or `incomplete` status plus individual rule results, explanations, affected component IDs, details, and missing specification paths. Implemented rules cover CPU socket and chipset, motherboard/case form factor, RAM generation, PSU power budget, GPU length, CPU cooler socket and height, and NVMe storage slots. Missing fields never pass a rule. SATA port capacity, BIOS/QVL support, lane sharing, connectors, and full physical-clearance checks remain unsupported or incomplete.
+
 ## Run tests
 
 From the repository root, with the virtual environment active:
