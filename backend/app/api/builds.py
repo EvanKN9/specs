@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session
 
 from ..db.session import get_session
 from ..domain.compatibility import CompatibilityStatus
-from ..domain.recommendation import RecommendationInfeasible, RecommendationPreferences, RecommendationService
+from ..domain.recommendation import (
+    RecommendationInfeasible,
+    RecommendationPreferences,
+    RecommendationService,
+)
 from ..models.component import ComponentCategory
 from ..repositories.components import ComponentRepository
 from .compatibility import CompatibilityCheckResponse, _rule_response

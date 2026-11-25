@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import './App.css'
-import { builds, components, preferences as defaultPreferences } from './data/mockData'
-import { checkCompatibility, cloneBuild, generateMockBuild, getBuildMetrics, getChangedCategories, getReplacementOptions } from './logic/buildLogic'
+import { preferences as defaultPreferences } from './data/mockData'
+import { cloneBuild, getBuildMetrics, getChangedCategories, getCompatibilityRequestKey, getReplacementOptions } from './logic/buildLogic'
+import { api } from './api/client'
+import { mapCatalogResponse, mapCompatibilityResponse, mapRecommendationResponse, mergeRecommendationCatalog, toRecommendationRequest } from './api/mappers'
 import heroVideo from './assets/specs-hero.mp4'
+
+const components = new Proxy({}, {
+  get(target, property) {
+    if (typeof property !== 'string') return target[property]
+    return target[property] || { id: property, name: 'Component data unavailable', spec: 'The backend did not return this component record.', price: null, performance: null, power: null }
+  },
+})
 
 const stepKeys = ['home', 'preferences', 'recommendation', 'compatibility', 'replacement', 'updated']
 const stepLabels = ['Home', 'Brief', 'Recommendation', 'Compatibility', 'Replacement', 'Updated build']
-const initialState = { page: 'home', lastPage: 'home', history: [], future: [], openPanel: null, preferencesDraft: { ...defaultPreferences }, originalBuild: null, currentBuild: null, replacementDraft: null, pickerCategory: null, savedBuilds: [], compareIds: [], completedSteps: { home: true } }
+const initialState = { page: 'home', lastPage: 'home', history: [], future: [], openPanel: null, preferencesDraft: { ...defaultPreferences, wifiRequired: false }, originalBuild: null, currentBuild: null, replacementDraft: null, pickerCategory: null, savedBuilds: [], compareIds: [], catalog: {}, catalogStatus: 'loading', catalogError: null, recommendationRequest: null, recommendationError: null, compatibility: null, compatibilityStatus: 'idle', compatibilityError: null, completedSteps: { home: true } }
 
 function reducer(state, action) {
   const navigate = (page, next = {}) => ({ ...state, ...next, page, lastPage: page, history: state.page === page ? state.history : [...state.history, state.page], future: [] })
@@ -22,11 +31,22 @@ function reducer(state, action) {
       return next ? { ...state, page: next, lastPage: next, history: [...state.history, state.page], future: state.future.slice(1), openPanel: null } : state
     }
     case 'update-preference': return { ...state, preferencesDraft: { ...state.preferencesDraft, [action.key]: action.value } }
-    case 'generate-build': return navigate('generating', { completedSteps: { ...state.completedSteps, preferences: true } })
-    case 'finish-generation': {
-      const build = generateMockBuild(state.preferencesDraft)
-      return { ...state, page: 'recommendation', lastPage: 'recommendation', future: [], originalBuild: build, currentBuild: cloneBuild(build), completedSteps: { ...state.completedSteps, recommendation: true }, replacementDraft: null }
+    case 'catalog-loaded': {
+      const catalog = Object.fromEntries(action.items.map((item) => [item.id, item]))
+      Object.assign(components, catalog)
+      return { ...state, catalog, catalogStatus: 'ready', catalogError: null }
     }
+    case 'catalog-error': return { ...state, catalogStatus: 'error', catalogError: action.error }
+    case 'generate-build': return navigate('generating', { recommendationRequest: toRecommendationRequest(state.preferencesDraft), recommendationError: null, completedSteps: { ...state.completedSteps, preferences: true } })
+    case 'recommendation-success': {
+      const catalog = mergeRecommendationCatalog(state.catalog, action.build)
+      Object.assign(components, action.build.componentDetails)
+      return { ...state, page: 'recommendation', lastPage: 'recommendation', future: [], catalog, originalBuild: action.build, currentBuild: cloneBuild(action.build), compatibility: action.build.compatibility, compatibilityStatus: 'ready', recommendationError: null, completedSteps: { ...state.completedSteps, recommendation: true }, replacementDraft: null }
+    }
+    case 'recommendation-error': return { ...state, recommendationError: action.error }
+    case 'compatibility-start': return { ...state, compatibilityStatus: 'loading', compatibilityError: null }
+    case 'compatibility-success': return { ...state, compatibility: action.result, compatibilityStatus: 'ready', compatibilityError: null }
+    case 'compatibility-error': return { ...state, compatibilityStatus: 'error', compatibilityError: action.error }
     case 'open-panel': return { ...state, openPanel: action.panel, pickerCategory: action.category || null, replacementDraft: action.panel === 'replacement' ? { category: action.category, candidateId: null } : state.replacementDraft, completedSteps: action.panel === 'compatibility' ? { ...state.completedSteps, compatibility: true } : state.completedSteps }
     case 'close-panel': return { ...state, openPanel: null, replacementDraft: action.discard ? null : state.replacementDraft }
     case 'select-replacement': return { ...state, replacementDraft: { ...state.replacementDraft, candidateId: action.id } }
@@ -37,17 +57,17 @@ function reducer(state, action) {
       return navigate('updated', { currentBuild: updated, openPanel: null, completedSteps: { ...state.completedSteps, replacement: true, updated: true }, replacementDraft: null })
     }
     case 'set-component': {
-      const updated = cloneBuild(state.currentBuild || builds.balanced1440p)
+      const updated = cloneBuild(state.currentBuild || { id: 'manual-build', name: 'Manual build', components: {} })
       updated.components[action.category] = action.id
       return { ...state, currentBuild: updated, openPanel: null, pickerCategory: null }
     }
     case 'remove-component': {
-      const updated = cloneBuild(state.currentBuild || builds.balanced1440p)
+      const updated = cloneBuild(state.currentBuild || { id: 'manual-build', name: 'Manual build', components: {} })
       delete updated.components[action.category]
       return { ...state, currentBuild: updated }
     }
     case 'save-build': {
-      const build = cloneBuild(state.currentBuild || builds.balanced1440p)
+      const build = cloneBuild(state.currentBuild || { id: 'manual-build', name: 'Manual build', components: {} })
       const saved = { ...build, id: `${build.id || 'build'}-${Date.now()}`, name: action.name || build.name || 'Untitled build' }
       return { ...state, savedBuilds: [...state.savedBuilds, saved] }
     }
@@ -61,7 +81,7 @@ function reducer(state, action) {
     case 'toggle-compare': return { ...state, compareIds: state.compareIds.includes(action.id) ? state.compareIds.filter((id) => id !== action.id) : state.compareIds.length < 3 ? [...state.compareIds, action.id] : state.compareIds }
     case 'hydrate-builds': return { ...state, savedBuilds: action.builds || [] }
     case 'load-build': return { ...state, currentBuild: cloneBuild(action.build), originalBuild: cloneBuild(action.build) }
-    case 'start-over': return { ...initialState, preferencesDraft: { ...defaultPreferences }, savedBuilds: state.savedBuilds }
+    case 'start-over': return { ...initialState, preferencesDraft: { ...defaultPreferences, wifiRequired: false }, savedBuilds: state.savedBuilds, catalog: state.catalog, catalogStatus: state.catalogStatus, catalogError: state.catalogError }
     default: return state
   }
 }
@@ -69,22 +89,49 @@ function reducer(state, action) {
 function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const build = state.currentBuild
-  const metrics = useMemo(() => build ? getBuildMetrics(build) : null, [build])
-  const compatibility = useMemo(() => build ? checkCompatibility(build) : null, [build])
+  const metrics = useMemo(() => build ? getBuildMetrics(build, state.catalog, state.compatibility) : null, [build, state.catalog, state.compatibility])
+  const compatibility = state.compatibility
   const changedCategories = useMemo(() => getChangedCategories(state.originalBuild, build), [state.originalBuild, build])
-  const replacementOptions = useMemo(() => state.replacementDraft && build ? getReplacementOptions(state.replacementDraft.category, build) : [], [state.replacementDraft, build])
+  const replacementOptions = useMemo(() => state.replacementDraft && build ? getReplacementOptions(state.replacementDraft.category, build, state.catalog) : [], [state.replacementDraft, build, state.catalog])
   const previewBuild = useMemo(() => {
     if (!state.replacementDraft?.candidateId || !build) return build
     const next = cloneBuild(build)
     next.components[state.replacementDraft.category] = state.replacementDraft.candidateId
     return next
   }, [state.replacementDraft, build])
-  const previewCompatibility = useMemo(() => previewBuild ? checkCompatibility(previewBuild) : null, [previewBuild])
+  const [previewCompatibility, setPreviewCompatibility] = useState({ status: 'unknown', errors: [], checks: [] })
+  useEffect(() => {
+    const ids = previewBuild ? Object.values(previewBuild.components).filter(Boolean) : []
+    if (!ids.length) return undefined
+    let cancelled = false
+    api.checkCompatibility(ids).then((response) => { if (!cancelled) setPreviewCompatibility(mapCompatibilityResponse(response, state.catalog)) }).catch(() => { if (!cancelled) setPreviewCompatibility({ status: 'unknown', errors: [{ explanation: 'Unable to check this preview.' }], checks: [] }) })
+    return () => { cancelled = true }
+  }, [previewBuild, state.catalog])
+  useEffect(() => {
+    let cancelled = false
+    api.listComponents({ limit: 100 }).then((response) => { if (!cancelled) dispatch({ type: 'catalog-loaded', items: mapCatalogResponse(response) }) }).catch((error) => { if (!cancelled) dispatch({ type: 'catalog-error', error: error.message }) })
+    return () => { cancelled = true }
+  }, [])
+  useEffect(() => {
+    if (state.page !== 'generating' || !state.recommendationRequest) return undefined
+    let cancelled = false
+    api.recommend(state.recommendationRequest).then((response) => { if (!cancelled) dispatch({ type: 'recommendation-success', build: mapRecommendationResponse(response) }) }).catch((error) => { if (!cancelled) dispatch({ type: 'recommendation-error', error: error.message }) })
+    return () => { cancelled = true }
+  }, [state.page, state.recommendationRequest])
+  useEffect(() => {
+    if (!build || state.page === 'recommendation') return undefined
+    const ids = getCompatibilityRequestKey(build).split('|').filter(Boolean)
+    if (!ids.length) return undefined
+    dispatch({ type: 'compatibility-start' })
+    let cancelled = false
+    api.checkCompatibility(ids).then((response) => { if (!cancelled) dispatch({ type: 'compatibility-success', result: mapCompatibilityResponse(response, state.catalog) }) }).catch((error) => { if (!cancelled) dispatch({ type: 'compatibility-error', error: error.message }) })
+    return () => { cancelled = true }
+  }, [build, state.page, state.catalog])
   useEffect(() => { const stored = window.localStorage.getItem('specs-saved-builds'); if (stored) dispatch({ type: 'hydrate-builds', builds: JSON.parse(stored) }) }, [])
   useEffect(() => { window.localStorage.setItem('specs-saved-builds', JSON.stringify(state.savedBuilds)) }, [state.savedBuilds])
 
   if (state.page === 'home') return <HomeRedesign state={state} dispatch={dispatch} />
-  return <div className="app-shell"><Header dispatch={dispatch} state={state} /><main className="page-frame"><JourneyProgress state={state} dispatch={dispatch} />{state.page === 'preferences' && <Preferences state={state} dispatch={dispatch} />}{state.page === 'generating' && <Generating onComplete={() => dispatch({ type: 'finish-generation' })} />}{['recommendation', 'updated'].includes(state.page) && <BuildWorkspace state={state} dispatch={dispatch} build={build} metrics={metrics} compatibility={compatibility} changedCategories={changedCategories} />}{state.page === 'catalog' && <CatalogScreen dispatch={dispatch} />}{state.page === 'manual' && <ManualBuilder state={state} dispatch={dispatch} build={build || cloneBuild(builds.balanced1440p)} />}{state.page === 'saved' && <SavedBuilds state={state} dispatch={dispatch} />}{state.page === 'compare' && <CompareBuilds state={state} dispatch={dispatch} />}</main>{state.openPanel === 'compatibility' && <CompatibilityPanel compatibility={compatibility} onClose={() => dispatch({ type: 'close-panel' })} dispatch={dispatch} />}{state.openPanel === 'replacement' && <ReplacementPanel state={state} dispatch={dispatch} currentBuild={build} options={replacementOptions} previewCompatibility={previewCompatibility} />}{state.openPanel === 'catalog' && <CatalogPicker category={state.pickerCategory} dispatch={dispatch} />}</div>
+  return <div className="app-shell"><Header dispatch={dispatch} state={state} /><main className="page-frame"><JourneyProgress state={state} dispatch={dispatch} />{state.page === 'preferences' && <Preferences state={state} dispatch={dispatch} />}{state.page === 'generating' && <Generating error={state.recommendationError} onRetry={() => dispatch({ type: 'generate-build' })} />}{['recommendation', 'updated'].includes(state.page) && build && <BuildWorkspace state={state} dispatch={dispatch} build={build} catalog={state.catalog} metrics={metrics} compatibility={compatibility} changedCategories={changedCategories} />}{state.page === 'catalog' && <CatalogScreen dispatch={dispatch} catalog={state.catalog} status={state.catalogStatus} error={state.catalogError} />}{state.page === 'manual' && <ManualBuilder state={state} dispatch={dispatch} build={build || { id: 'manual-build', name: 'Manual build', components: {} }} catalog={state.catalog} compatibility={compatibility} />}{state.page === 'saved' && <SavedBuilds state={state} dispatch={dispatch} catalog={state.catalog} />}{state.page === 'compare' && <CompareBuilds state={state} dispatch={dispatch} catalog={state.catalog} />}</main>{state.openPanel === 'compatibility' && compatibility && <CompatibilityPanel compatibility={compatibility} onClose={() => dispatch({ type: 'close-panel' })} dispatch={dispatch} />}{state.openPanel === 'replacement' && <ReplacementPanel state={state} dispatch={dispatch} currentBuild={build} catalog={state.catalog} options={replacementOptions} previewCompatibility={previewCompatibility} />}{state.openPanel === 'catalog' && <CatalogPicker category={state.pickerCategory} dispatch={dispatch} catalog={state.catalog} status={state.catalogStatus} error={state.catalogError} />}</div>
 }
 
 function Brand({ onClick }) { return <button className="brand-button brand-mark" onClick={onClick}><span>SP</span> SPECS</button> }
@@ -109,7 +156,7 @@ function HomeRedesign({ state, dispatch }) {
   return <div className="home-page home-redesign"><header className="home-nav"><Brand onClick={() => dispatch({ type: 'go-home' })} /><div className="nav-meta">{hasBuild ? <button className="quiet-link" onClick={() => dispatch({ type: 'start-over' })}>Start over</button> : <span>Build what matters</span>}</div></header><main className="home-hero"><div className="hero-media" aria-label="A premium gaming PC revealing its internal hardware"><div className="hero-media-fallback" aria-hidden="true"><span>SPECS</span></div><video ref={videoRef} className="hero-video" autoPlay muted loop playsInline preload="metadata" aria-hidden="true"><source src={heroVideo} type="video/mp4" /></video><div className="hero-scrim" aria-hidden="true" /></div><div className="hero-copy page-frame"><p className="eyebrow">PC configuration, made legible</p><h1>Build from what matters.</h1><p className="hero-description">Tell SPECS what you need. Get a system you can understand, inspect, and change.</p><div className="hero-actions"><button className="button button-primary" onClick={() => dispatch({ type: 'navigate', page: hasBuild ? resumePage : 'preferences' })}>{hasBuild ? 'Resume this build' : 'Define your build brief'} <span aria-hidden="true">→</span></button>{hasBuild && <button className="button button-quiet" onClick={() => dispatch({ type: 'start-over' })}>Start a new build</button>}</div></div></main><section className="home-method page-frame"><div className="method-intro"><p className="eyebrow">A clearer way to choose</p><h2>The parts are only the beginning.</h2><p>SPECS keeps budget, performance, power, and compatibility in the same conversation.</p></div><div className="method-list"><div><b>01</b><strong>Start with intent</strong><span>Describe the work your system needs to do.</span></div><div><b>02</b><strong>See the relationships</strong><span>Understand why each component belongs.</span></div><div><b>03</b><strong>Change one decision</strong><span>See the tradeoffs before you commit.</span></div></div></section><footer className="home-footer page-frame"><span>SPECS</span><span>Define. Inspect. Adjust.</span></footer></div>
 }
 
-function Header({ dispatch, state }) { return <header className="app-header"><Brand onClick={() => dispatch({ type: 'go-home' })} /><nav className="header-nav" aria-label="Primary navigation"><button onClick={() => dispatch({ type: 'navigate', page: 'catalog' })}>Catalog</button><button onClick={() => dispatch({ type: 'navigate', page: 'manual' })}>Manual builder</button><button onClick={() => dispatch({ type: 'navigate', page: 'saved' })}>My builds {state.savedBuilds.length > 0 && `(${state.savedBuilds.length})`}</button></nav><div className="header-right"><button className="header-home" onClick={() => dispatch({ type: 'go-home' })}>Home</button><span className="sample-badge">Local sample data</span><button className="start-over" onClick={() => dispatch({ type: 'start-over' })}>Start over</button></div></header> }
+function Header({ dispatch, state }) { const label = state.catalogStatus === 'ready' ? 'Backend catalog' : state.catalogStatus === 'error' ? 'Catalog unavailable' : 'Loading catalog'; return <header className="app-header"><Brand onClick={() => dispatch({ type: 'go-home' })} /><nav className="header-nav" aria-label="Primary navigation"><button onClick={() => dispatch({ type: 'navigate', page: 'catalog' })}>Catalog</button><button onClick={() => dispatch({ type: 'navigate', page: 'manual' })}>Manual builder</button><button onClick={() => dispatch({ type: 'navigate', page: 'saved' })}>My builds {state.savedBuilds.length > 0 && `(${state.savedBuilds.length})`}</button></nav><div className="header-right"><button className="header-home" onClick={() => dispatch({ type: 'go-home' })}>Home</button><span className="sample-badge">{label}</span><button className="start-over" onClick={() => dispatch({ type: 'start-over' })}>Start over</button></div></header> }
 
 function JourneyProgress({ state, dispatch }) {
   const active = state.openPanel === 'compatibility' ? 'compatibility' : state.openPanel === 'replacement' ? 'replacement' : state.page === 'updated' ? 'updated' : state.page === 'recommendation' ? 'recommendation' : state.page === 'preferences' || state.page === 'generating' ? 'preferences' : 'home'
@@ -125,19 +172,21 @@ function Preferences({ state, dispatch }) {
 function Field({ label, hint, htmlFor, children }) { return <div className="field"><div className="field-label"><label htmlFor={htmlFor}>{label}</label>{hint && <span>{hint}</span>}</div>{children}</div> }
 function Choice({ value, title, copy, checked, onChange }) { return <label className={`choice-card ${checked ? 'selected' : ''}`}><input type="radio" name="workload" value={value} checked={checked} onChange={onChange} /><span><b>{title}</b><small>{copy}</small></span><i aria-hidden="true">{checked ? '✓' : ''}</i></label> }
 
-function Generating({ onComplete }) { useEffect(() => { const timer = setTimeout(onComplete, 1200); return () => clearTimeout(timer) }, [onComplete]); return <section className="generating-state"><div className="assembly-schematic"><span className="assembly-line line-one" /><span className="assembly-line line-two" /><b>ASSEMBLING / 03</b><span className="assembly-node">GPU</span><span className="assembly-node">CPU</span><span className="assembly-node">FIT</span></div><p className="eyebrow">02 / Build synthesis</p><h2>Mapping the right balance.</h2><p>Comparing the sample catalog against your budget, target, and compatibility rules.</p><div className="loading-list"><span>Match performance to intent</span><span>Validate component relationships</span><span>Reserve room for upgrades</span></div></section> }
+function Generating({ error, onRetry }) { const [slow, setSlow] = useState(false); useEffect(() => { const timer = setTimeout(() => setSlow(true), 4000); return () => clearTimeout(timer) }, []); if (error) return <section className="generating-state"><p className="eyebrow">02 / Build synthesis</p><h2>We could not complete that request.</h2><p>{error}</p><button className="button button-primary" onClick={onRetry}>Try again</button><p className="form-disclaimer">No mock result was substituted.</p></section>; return <section className="generating-state"><div className="assembly-schematic"><span className="assembly-line line-one" /><span className="assembly-line line-two" /><b>ASSEMBLING / 03</b><span className="assembly-node">GPU</span><span className="assembly-node">CPU</span><span className="assembly-node">FIT</span></div><p className="eyebrow">02 / Build synthesis</p><h2>Mapping the right balance.</h2><p>Comparing the live catalog against your budget, target, and compatibility rules.</p><div className="loading-list"><span>Match performance to intent</span><span>Validate component relationships</span><span>Reserve room for upgrades</span></div>{slow && <p className="form-disclaimer">The backend is taking longer than usual. Please keep this window open.</p>}</section> }
 
-function BuildWorkspace({ state, dispatch, build, metrics, compatibility, changedCategories }) {
+function BuildWorkspace({ state, dispatch, build, catalog, metrics, compatibility, changedCategories }) {
+  const components = catalog
   const isUpdated = state.page === 'updated'
   const hasChanges = changedCategories.length > 0
-  const title = isUpdated ? (hasChanges ? 'The system after one deliberate change.' : 'The original recommendation, restored.') : 'A balanced starting point for 1440p.'
-  const description = isUpdated ? (hasChanges ? 'Review the effect of your replacement, then inspect the relationships again.' : 'Nothing is different from the original recommendation.') : 'A configuration shaped around your brief, with the reasoning kept visible.'
+  const title = isUpdated ? (hasChanges ? 'The system after one deliberate change.' : 'The original recommendation, restored.') : `${build.name || 'Recommended system'}.`
+  const description = `${isUpdated ? (hasChanges ? 'Review the effect of your replacement, then inspect the relationships again.' : 'Nothing is different from the original recommendation.') : 'A configuration shaped around your brief, with the reasoning kept visible.'} Hardware specifications and compatibility checks come from the backend; prices are illustrative demo values, not live retailer prices.`
   return <section className="flow-section build-section"><div className="build-heading"><div><p className="eyebrow">{isUpdated ? '06 / Updated build' : '03 / Recommendation'}</p><h2>{title}</h2><p>{description}</p></div><div className="build-actions"><StatusBadge compatibility={compatibility} /><span className="sample-note">MOCK PRICES / SEP 2026</span><div className="top-actions"><button className="button button-primary" onClick={() => dispatch({ type: 'save-build', name: isUpdated ? 'Updated recommendation' : 'Recommended build' })}>Save build</button><button className="button button-quiet" onClick={() => dispatch({ type: 'navigate', page: 'manual' })}>Edit manually</button></div></div></div>{isUpdated && <ChangeSummary originalBuild={state.originalBuild} currentBuild={build} metrics={metrics} changedCategories={changedCategories} />}<div className="build-grid"><div className="component-list"><div className="list-heading"><span>System map / {Object.keys(build.components).length} modules</span><span>Mock price</span></div>{Object.entries(build.components).map(([category, id]) => <ComponentRow key={category} category={category} item={components[id]} changed={changedCategories.includes(category)} onReplace={() => dispatch({ type: 'open-panel', panel: 'replacement', category })} />)}</div><aside className="build-summary"><div className="summary-top"><span className="summary-label">Estimated total</span><strong>${metrics.total.toLocaleString()}</strong><span className="summary-foot">Mock estimate, before tax or shipping</span></div><div className="metrics-grid"><Metric label="Performance" value={`${metrics.performanceScore}/100`} accent /><Metric label="Power estimate" value={`${metrics.powerWatts}W`} /><Metric label="Upgrade room" value={`${metrics.upgradeabilityScore}/100`} /></div><div className="reason-preview"><span className="section-kicker">Selection logic / mock reasoning</span><p>The system balances the submitted workload and budget, then protects socket, power, fit, and upgrade relationships.</p>{['cpu', 'gpu', 'motherboard', 'memory', 'psu'].map((category) => { const item = components[build.components[category]]; return item && <div className="reason-line" key={category}><span>{category}</span><b>{item.reason || 'Selected to support the current configuration.'}</b></div> })}</div><button className="button button-dark button-wide" onClick={() => dispatch({ type: 'open-panel', panel: 'compatibility' })}>Inspect compatibility <span aria-hidden="true">↗</span></button></aside></div></section>
 }
 
 function StatusBadge({ compatibility }) { return <span className={`compatible-pill ${compatibility.status === 'incompatible' ? 'is-error' : ''}`}><span>{compatibility.status === 'compatible' ? '✓' : '!'}</span>{compatibility.status === 'compatible' ? 'Compatible baseline' : `${compatibility.errors.length} issue${compatibility.errors.length > 1 ? 's' : ''} to resolve`}</span> }
-function ComponentRow({ category, item, onReplace, changed }) { return <div className={`component-row ${changed ? 'changed' : ''}`}><div className="component-category"><span className="component-glyph">{category.slice(0, 3).toUpperCase()}</span><span><small>{category}</small><strong>{item.name}</strong><em>{item.spec}</em></span></div><div className="component-price"><strong>${item.price}</strong><button className="replace-button" onClick={onReplace}>{changed ? 'Change again' : 'Replace'}</button></div></div> }
-function Metric({ label, value, accent }) { return <div className={accent ? 'metric accent' : 'metric'}><span>{label}</span><strong>{value}</strong></div> }
+function ComponentRow({ category, item, onReplace, changed }) { if (!item || typeof item !== 'object') return <div className="component-row"><div className="component-category"><span className="component-glyph">{category.slice(0, 3).toUpperCase()}</span><span><small>{category}</small><strong>Component data unavailable</strong><em>The backend returned an incomplete component record.</em></span></div><button className="replace-button" onClick={onReplace}>Retry selection</button></div>; return <div className={`component-row ${changed ? 'changed' : ''}`}><div className="component-category"><span className="component-glyph">{category.slice(0, 3).toUpperCase()}</span><span><small>{category}</small><strong>{item.name || 'Unnamed component'}</strong><em>{item.spec || 'Specifications unavailable'}</em></span></div><div className="component-price"><strong>{item.price == null ? 'No price' : `$${item.price}`}</strong><button className="replace-button" onClick={onReplace}>{changed ? 'Change again' : 'Replace'}</button></div></div> }
+function formatScore(value) { const score = Number(String(value).split('/')[0]); return Number.isFinite(score) ? `${score.toFixed(1).replace(/\.0$/, '')}/100` : 'Unavailable' }
+function Metric({ label, value, accent }) { const displayValue = label === 'Performance' ? formatScore(value) : value == null || String(value).startsWith('null') || String(value).startsWith('undefined') ? 'Unavailable' : value; const displayLabel = label === 'Power estimate' || label === 'Power draw' ? 'Estimated system draw' : label === 'Performance' ? 'Recommendation score' : label; return <div className={accent ? 'metric accent' : 'metric'}><span>{displayLabel}</span><strong>{displayValue}</strong></div> }
 function ChangeSummary({ originalBuild, currentBuild, metrics, changedCategories }) { return <div className={`change-summary ${changedCategories.length ? '' : 'is-original'}`}><span className="change-icon">{changedCategories.length ? '↗' : '↺'}</span><div><strong>{changedCategories.length ? `${changedCategories.length} component${changedCategories.length > 1 ? 's' : ''} changed` : 'Original recommendation restored'}</strong><p>{changedCategories.length ? changedCategories.map((category) => `${category}: ${components[currentBuild.components[category]].name}`).join(' · ') : 'The current system matches the generated recommendation.'}</p></div><div className="change-stat"><span>Total</span><strong>${metrics.total.toLocaleString()}</strong></div><div className="change-stat"><span>Original</span><strong>${getBuildMetrics(originalBuild).total.toLocaleString()}</strong></div></div> }
 
 function usePanelDismiss(onClose) { useEffect(() => { const onKeyDown = (event) => { if (event.key === 'Escape') onClose() }; document.addEventListener('keydown', onKeyDown); return () => document.removeEventListener('keydown', onKeyDown) }, [onClose]) }
@@ -145,23 +194,27 @@ function PanelFrame({ children, title, eyebrow, onClose }) { usePanelDismiss(onC
 function CompatibilityPanel({ compatibility, onClose, dispatch }) { return <PanelFrame eyebrow="04 / System inspection" title={compatibility.status === 'compatible' ? 'Everything fits together.' : 'Resolve the relationship.'} onClose={onClose}><div className={`panel-status ${compatibility.status === 'incompatible' ? 'error' : ''}`}><span>{compatibility.status === 'compatible' ? '✓' : '!'}</span><div><strong>{compatibility.status === 'compatible' ? 'Compatible configuration' : 'Compatibility needs attention'}</strong><p>{compatibility.status === 'compatible' ? 'All simplified prototype checks passed for the current system.' : 'One or more parts are asking for a different relationship.'}</p></div></div><div className="checks-list">{compatibility.checks.map((check) => <div className={`check-row ${check.status === 'error' ? 'error' : ''}`} key={check.id}><span className="check-mark">{check.status === 'pass' ? '✓' : '!'}</span><div><strong>{check.title}</strong><p>{check.explanation}</p><small>{check.components}</small>{check.status === 'error' && <button className="inline-action" onClick={() => dispatch({ type: 'open-panel', panel: 'replacement', category: check.id === 'socket' ? 'motherboard' : check.id === 'memory' ? 'memory' : check.id === 'gpu-clearance' ? 'gpu' : 'psu' })}>Resolve with a replacement ↗</button>}</div></div>)}</div><div className="panel-note"><strong>Prototype rule set</strong><p>Socket, memory generation, form factor, power headroom, GPU clearance, cooling, and storage interface are checked locally against sample specifications.</p></div></PanelFrame> }
 function ReplacementPanel({ state, dispatch, currentBuild, options, previewCompatibility }) { const category = state.replacementDraft.category; const current = components[currentBuild.components[category]]; const selected = state.replacementDraft.candidateId ? components[state.replacementDraft.candidateId] : null; return <PanelFrame eyebrow="05 / Component trade-off" title={`Tune the ${category}.`} onClose={() => dispatch({ type: 'close-panel', discard: true })}><div className="current-part"><span>Current module</span><strong>{current.name}</strong><small>${current.price} · {current.spec}</small></div><div className="replacement-options">{options.map((item) => <label className={`replacement-option ${state.replacementDraft.candidateId === item.id ? 'selected' : ''}`} key={item.id}><input type="radio" name="replacement" checked={state.replacementDraft.candidateId === item.id} onChange={() => dispatch({ type: 'select-replacement', id: item.id })} /><span className="option-copy"><strong>{item.name}</strong><small>{item.spec}</small><em>{item.reason}</em><i>{item.tradeoff}</i></span><span className="option-price">${item.price}</span></label>)}</div>{selected && <div className="preview-block"><div><span>Price delta</span><strong>{selected.price - current.price >= 0 ? '+' : ''}${selected.price - current.price}</strong></div><div><span>Performance</span><strong>{selected.performance - current.performance >= 0 ? '+' : ''}{selected.performance - current.performance}</strong></div><div><span>Compatibility</span><strong className={previewCompatibility.status === 'compatible' ? 'pass-text' : 'error-text'}>{previewCompatibility.status === 'compatible' ? 'Pass' : `${previewCompatibility.errors.length} issue`}</strong></div></div>}{selected && previewCompatibility.status === 'incompatible' && <div className="preview-warning"><strong>Preview is not compatible yet.</strong><p>{previewCompatibility.errors[0].explanation}</p><span>Choose a compatible option or apply this to inspect the updated system.</span></div>}<button className="button button-primary button-wide" disabled={!selected} onClick={() => dispatch({ type: 'apply-replacement' })}>Apply this trade-off <span aria-hidden="true">→</span></button></PanelFrame> }
 
-function CatalogScreen({ dispatch }) {
+function CatalogScreen({ dispatch, catalog, status, error }) {
+  const components = catalog
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
+  if (status === 'loading') return <section className="flow-section catalog-screen"><div className="empty-state"><strong>Loading the backend catalog…</strong><p>Connecting to the PostgreSQL-backed component service.</p></div></section>
+  if (status === 'error') return <section className="flow-section catalog-screen"><div className="empty-state"><strong>Catalog unavailable.</strong><p>{error}</p><p>No mock catalog was substituted.</p></div></section>
   const categories = ['all', ...new Set(Object.values(components).map((item) => item.category))]
   const items = Object.values(components).filter((item) => (category === 'all' || item.category === category) && `${item.name} ${item.spec}`.toLowerCase().includes(query.toLowerCase()))
   return <section className="flow-section catalog-screen"><div className="screen-heading"><div><p className="eyebrow">Catalog / Discover components</p><h2>Find the part that fits the system.</h2><p>Search the mock catalog, inspect technical details, then add a component to the manual builder.</p></div><button className="button button-primary" onClick={() => dispatch({ type: 'navigate', page: 'manual' })}>Open manual builder <span aria-hidden="true">→</span></button></div><div className="catalog-tools"><label><span className="sr-only">Search components</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name or specification" /></label><div className="filter-row" aria-label="Filter by category">{categories.map((item) => <button className={category === item ? 'selected' : ''} key={item} onClick={() => setCategory(item)}>{item}</button>)}</div></div><div className="catalog-list">{items.map((item) => <article className="catalog-item" key={item.id}><div><p className="section-kicker">{item.category}</p><h3>{item.name}</h3><p>{item.spec}</p><details><summary>View technical details</summary><p>{item.reason || 'Mock catalog component for the current GUI workflow.'} {item.tradeoff || 'Specifications and performance values are illustrative.'}</p></details></div><div className="catalog-item-meta"><strong>${item.price}</strong><button className="replace-button" onClick={() => dispatch({ type: 'navigate', page: 'manual' })}>Use in builder</button></div></article>)}{items.length === 0 && <div className="empty-state"><strong>No mock components match that search.</strong><p>Try another category or search term.</p></div>}</div><p className="form-disclaimer">Mock catalog. Prices and specifications are illustrative, not retailer data.</p></section>
 }
 
-function CatalogPicker({ category, dispatch }) {
+function CatalogPicker({ category, dispatch, catalog }) {
+  const components = catalog
   const [query, setQuery] = useState('')
   const items = Object.values(components).filter((item) => (!category || item.category === category) && `${item.name} ${item.spec}`.toLowerCase().includes(query.toLowerCase()))
   return <PanelFrame eyebrow="Manual builder / Component catalog" title={`Choose a ${category || 'component'}.`} onClose={() => dispatch({ type: 'close-panel' })}><input className="panel-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search this category" aria-label="Search components" /><div className="picker-list">{items.map((item) => <button className="picker-option" key={item.id} onClick={() => dispatch({ type: 'set-component', category, id: item.id })}><span><strong>{item.name}</strong><small>{item.spec}</small></span><b>${item.price}</b></button>)}</div></PanelFrame>
 }
 
-function ManualBuilder({ dispatch, build }) {
-  const metrics = getBuildMetrics(build)
-  const compatibility = checkCompatibility(build)
+function ManualBuilder({ dispatch, build, catalog, compatibility }) {
+  const components = catalog
+  const metrics = getBuildMetrics(build, catalog, compatibility)
   return <section className="flow-section manual-screen"><div className="screen-heading"><div><p className="eyebrow">Manual builder / Assemble</p><h2>Choose each relationship yourself.</h2><p>Start from the mock configuration, then add, remove, or replace any component. Compatibility and totals update locally.</p></div><div className="top-actions"><button className="button button-primary" onClick={() => dispatch({ type: 'save-build', name: 'Manual build' })}>Save build</button><button className="button button-quiet" onClick={() => dispatch({ type: 'navigate', page: 'compare' })}>Compare builds</button></div></div><div className="build-grid"><div className="component-list">{['cpu', 'motherboard', 'gpu', 'memory', 'storage', 'psu', 'case', 'cooler'].map((category) => { const item = components[build.components[category]]; return <div className="manual-slot" key={category}><div><span className="component-glyph">{category.slice(0, 3).toUpperCase()}</span><span><small>{category}</small><strong>{item ? item.name : 'Not selected'}</strong><em>{item ? item.spec : 'Choose a component to complete this slot.'}</em></span></div><div className="slot-actions"><button className="replace-button" onClick={() => dispatch({ type: 'open-panel', panel: 'catalog', category })}>{item ? 'Replace' : 'Add'}</button>{item && <button className="remove-button" onClick={() => dispatch({ type: 'remove-component', category })}>Remove</button>}</div></div> })}</div><aside className="build-summary"><div className="summary-top"><span className="summary-label">Estimated total</span><strong>${metrics.total.toLocaleString()}</strong><span className="summary-foot">Mock price / illustrative estimate</span></div><div className="metrics-grid"><Metric label="Performance" value={`${metrics.performanceScore}/100`} accent /><Metric label="Power draw" value={`${metrics.powerWatts}W`} /><Metric label="Compatibility" value={compatibility.status === 'compatible' ? 'Pass' : `${compatibility.errors.length} issues`} /></div><button className="button button-dark button-wide" onClick={() => dispatch({ type: 'open-panel', panel: 'compatibility' })}>Inspect compatibility <span aria-hidden="true">↗</span></button></aside></div></section>
 }
 

@@ -129,3 +129,7 @@ h1,h2,h3,p { margin-top:0; } h1 { max-width:720px; margin-bottom:24px; font-size
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 @media(max-width:900px){.header-nav{order:3;width:100%;margin:0;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px}.app-header{height:auto;min-height:78px;padding-top:14px;padding-bottom:14px;flex-wrap:wrap}.header-right{margin-left:auto}.screen-heading{display:block}.screen-heading .button{margin-top:10px}.catalog-item,.saved-item{display:block}.catalog-item-meta,.saved-actions{justify-content:flex-start;margin-top:14px}.manual-slot{align-items:flex-start;flex-direction:column}.slot-actions{padding-left:57px}.comparison-row{grid-template-columns:1fr 1fr}.comparison-head span{grid-column:1/-1}.comparison-head strong{font-size:11px}}
 @media(max-width:560px){.header-right{gap:10px}.sample-badge{display:none}.header-nav{gap:8px}.header-nav button{font-size:9px}.screen-heading h2{font-size:3rem}.build-actions{display:block}.build-actions .top-actions{margin-top:10px}.build-actions .button{width:auto}.comparison-row{grid-template-columns:1fr}.comparison-row strong{padding-left:10px}.workload-grid{grid-template-columns:1fr}.catalog-item-meta{align-items:flex-start;flex-direction:column;gap:8px}}
+
+/* Keep the editorial hierarchy without collapsing headline letterforms. */
+h1,h2,h3 { letter-spacing:-.035em; }
+.home-redesign h1 { letter-spacing:-.045em; }

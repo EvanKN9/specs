@@ -1,7 +1,7 @@
-import { builds, components } from '../data/mockData'
+import { builds, components } from '../data/mockData.js'
 
 export function cloneBuild(build) {
-  return { ...build, components: { ...build.components } }
+  return { ...build, components: { ...build.components }, componentDetails: build.componentDetails ? { ...build.componentDetails } : undefined }
 }
 
 export function generateMockBuild(preferences) {
@@ -24,19 +24,28 @@ export function generateMockBuild(preferences) {
   return { ...build, name: `${workload || 'balanced'} mock recommendation` }
 }
 
-export function getBuildMetrics(build) {
-  const parts = Object.values(build.components).map((id) => components[id]).filter(Boolean)
+export function getBuildMetrics(build, catalog = components, compatibility = null) {
+  const parts = Object.values(build.components).map((id) => catalog[id] || build.componentDetails?.[id]).filter(Boolean)
+  const powerRule = compatibility?.checks?.find((check) => check.id === 'psu_power_budget')
+  const powerDetails = powerRule?.details || {}
   return {
-    total: parts.reduce((sum, item) => sum + item.price, 0),
-    powerWatts: parts.reduce((sum, item) => sum + item.power, 0),
-    performanceScore: Math.round(parts.reduce((sum, item) => sum + item.performance, 0) / 2.1),
-    upgradeabilityScore: Math.round(parts.reduce((sum, item) => sum + item.upgradeability, 0) / parts.length),
+    total: parts.reduce((sum, item) => sum + (item.price || 0), 0),
+    powerWatts: powerDetails.estimated_system_power_w || parts.reduce((sum, item) => sum + (item.power || 0), 0) || null,
+    estimatedSystemPowerWatts: powerDetails.estimated_system_power_w || null,
+    requiredPsuWatts: powerDetails.required_psu_w || null,
+    performanceScore: build.metrics?.recommendationScore ?? null,
+    performanceProxy: build.metrics?.performanceProxy ?? null,
+    upgradeabilityScore: build.metrics?.upgradeabilityScore ?? null,
   }
 }
 
 export function getChangedCategories(originalBuild, currentBuild) {
   if (!originalBuild || !currentBuild) return []
   return Object.keys(currentBuild.components).filter((category) => originalBuild.components[category] !== currentBuild.components[category])
+}
+
+export function getCompatibilityRequestKey(build) {
+  return build ? Object.values(build.components).filter(Boolean).join('|') : ''
 }
 
 export function checkCompatibility(build) {
@@ -63,7 +72,7 @@ export function checkCompatibility(build) {
   return { status: errors.length ? 'incompatible' : 'compatible', checks, warnings: [], errors }
 }
 
-export function getReplacementOptions(category, build) {
+export function getReplacementOptions(category, build, catalog = components) {
   const currentId = build.components[category]
-  return Object.values(components).filter((item) => item.category === category && item.id !== currentId).map((item) => ({ ...item, reason: item.reason || 'A considered alternative for this system.', tradeoff: item.tradeoff || 'Changes the balance of the build.' }))
+  return Object.values(catalog).filter((item) => item.category === category && item.id !== currentId).map((item) => ({ ...item, reason: item.reason || 'A considered alternative for this system.', tradeoff: item.tradeoff || 'Changes the balance of the build.' }))
 }
