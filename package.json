@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "node --test src/api/mappers.test.js",
+    "test": "node --test src/api/mappers.test.js src/logic/navigation.test.js src/logic/buildMetrics.test.js",
     "preview": "vite preview"
   },
   "dependencies": {

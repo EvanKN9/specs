@@ -33,10 +33,14 @@ export function getBuildMetrics(build, catalog = components, compatibility = nul
     powerWatts: powerDetails.estimated_system_power_w || parts.reduce((sum, item) => sum + (item.power || 0), 0) || null,
     estimatedSystemPowerWatts: powerDetails.estimated_system_power_w || null,
     requiredPsuWatts: powerDetails.required_psu_w || null,
-    performanceScore: build.metrics?.recommendationScore ?? null,
-    performanceProxy: build.metrics?.performanceProxy ?? null,
-    upgradeabilityScore: build.metrics?.upgradeabilityScore ?? null,
+    installedPsuWatts: getInstalledPsuWatts(build, catalog),
   }
+}
+
+export function getInstalledPsuWatts(build, catalog = components) {
+  const id = build?.components?.psu
+  const item = id ? catalog[id] || build.componentDetails?.[id] : null
+  return Number(item?.specifications?.wattage_w || item?.specs?.wattage_w || item?.watts || 0) || null
 }
 
 export function getChangedCategories(originalBuild, currentBuild) {
